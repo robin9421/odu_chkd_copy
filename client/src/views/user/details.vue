@@ -60,12 +60,91 @@
               </v-row>
             </v-container>
 
+            <!-- -----------message menu------------------- -->
+            <v-menu
+              ref="messageMenu"
+              v-model="messageMenu"
+              :close-on-content-click="false"
+              :close-on-click="false"
+              transition="scale-transition"
+              min-width="380"
+              relative
+            >
+              <div>
+                <form @submit.prevent="createMessage">
+                  <v-card height="600">
+                    <v-card-title
+                      >Chat <v-spacer></v-spacer
+                      ><v-icon color="error" @click="closeMessageMenu"
+                        >mdi-close</v-icon
+                      ></v-card-title
+                    >
+                    <hr />
+                    <v-card-text>
+                      <p
+                        class="nomessages text-secondary"
+                        v-if="messages.length == 0"
+                      >
+                        No messages yet!
+                      </p>
+                      <div
+                        class="messages"
+                        v-chat-scroll="{ always: false, smooth: true }"
+                      >
+                        <div style="margin-bottom:20px;" v-for="message in messages" :key="message.id">
+                          <span style="font-size:18px;">[{{ message.name }}]: </span>
+                          <span style="font-size:18px;">{{ message.message }}</span><br>
+                          <span style="font-size:14px;color:gray">{{
+                            message.timestamp
+                          }}</span>
+                        </div>
+                      </div>
+                    </v-card-text>
+                    <hr />
+                    <v-container
+                      style="margin-top: -10px; margin-bottom: -100px"
+                    >
+                      <v-row justify="center">
+                        <v-col cols="12" md="10">
+                          <v-text-field
+                            v-model="messageText"
+                            label="Enter your message"
+                            outlined
+                          ></v-text-field>
+                        </v-col>
+                        <v-col
+                          cols="12"
+                          md="1"
+                          style="
+                            margin-right: 20px;
+                            margin-left: -10px;
+                            margin-top: 9px;
+                          "
+                        >
+                          <v-icon
+                            large
+                            @click="createMessage"
+                            name="action"
+                            color="green"
+                            >mdi-send</v-icon
+                          >
+                        </v-col>
+                      </v-row>
+                    </v-container>
+                  </v-card>
+                </form>
+              </div>
+            </v-menu>
+
+            <!-- ----------------------------------------------- -->
+
             <!-- -----------dialog for patient more than one with same phone----------- -->
             <v-dialog v-model="dialogMultiplePatients" max-width="500px">
               <v-card>
-                <v-card-title class="headline" style="font-size:18px !important;"
-                  >Multiple Users found! Select one to
-                  continue.
+                <v-card-title
+                  class="headline"
+                  style="font-size: 18px !important"
+                  >Multiple Users found! Select one to continue.
                 </v-card-title>
                 <v-container>
                   <v-col cols="12" sm="6" md="12">
@@ -782,6 +861,14 @@
             <v-icon color="error" @click="deleteItem(item)" class="mr-2"
               >mdi-delete</v-icon
             >
+
+            <!-- ----------for messaging part--------------- -->
+            <v-badge color="green" content="2" overlap>
+              <v-icon color="primary" @click="messagePart(item)" class="mr-2"
+                >mdi-message-text</v-icon
+              >
+            </v-badge>
+            <!-- -------------------------------------------------- -->
           </template>
 
           <template v-slot:item.currentStatus="{ item }">
@@ -941,6 +1028,7 @@
              
 
 <script>
+import fb from "../../firebase/init";
 import moment from "moment";
 import axios from "../../axios";
 import HVStateStepper from "../../components/HVStateStepper";
@@ -948,8 +1036,17 @@ export default {
   components: {
     HVStateStepper,
   },
+  name: "Chat",
+  props: ["name"],
   data() {
     return {
+      fromID:"",
+      toID:"",
+      getSurgeryID: "",
+      getPatientName: "",
+      messageText: null,
+      messages: [],
+      messageMenu: false,
       selectedPatientFromMultipleID: "",
       addPatientFromMultipleExtract: false,
       AddPatient: false,
@@ -1091,13 +1188,11 @@ export default {
             this.dialogMultiplePatients = true;
             this.multiplePatientFirstName = response.data.firstname;
             this.multiplePatientLastName = response.data.lastname;
-            for(var i =0;i<response.data.dateOfBirth.length;i++)
-            {
-              this.multiplePatientBirthDate[i] =   moment(
-              String(response.data.dateOfBirth[i])
-            ).format("MM/DD/YYYY");    
+            for (var i = 0; i < response.data.dateOfBirth.length; i++) {
+              this.multiplePatientBirthDate[i] = moment(
+                String(response.data.dateOfBirth[i])
+              ).format("MM/DD/YYYY");
             }
-            
           } else {
             console.log("+++++++++++++++");
             console.log("+++++++++++++++");
@@ -1115,9 +1210,10 @@ export default {
           this.patientBirthDate = "";
           console.log(err);
         });
-    }
+    },
   },
   created() {
+    this.messages=[];
     //get all surgery types
     axios()
       .get("/surgeryTypes/getSurgeryTypes")
@@ -1184,25 +1280,89 @@ export default {
     }
   },
   methods: {
+    closeMessageMenu(){
+      this.messageMenu = false;
+      this.messages = [];
+    },
+    messagePart(messageGet) {
+      this.messageMenu = true;
+      if(this.role == "Admin")
+      {
+        this.fromID = "Admin";
+        this.toID = messageGet._id
+      } else {
+        this.fromID = messageGet._id 
+        this.toID = "Admin"
+      }
+      
+      this.getPatientName = messageGet.patient.firstname;
+      this.getSurgeryID = messageGet._id;
+      let ref = fb
+        .collection("messages")
+        .doc(this.getSurgeryID)
+        .collection(this.getSurgeryID)
+        .orderBy("timestamp");
+
+      ref.onSnapshot((snapshot) => {
+        console.log("{{{{{{{{{{{{{");
+        console.log(snapshot);
+        console.log("{{{{{{{{{{{{{");
+        snapshot.docChanges().forEach((change) => {
+          if (change.type == "added") {
+            let doc = change.doc;
+            this.messages.push({
+              name: doc.data().name,
+              message: doc.data().message,
+              timestamp: moment(doc.data().timestamp).format("DD-MM-YYYY"+", " +"h:mm A "),
+              fromID: doc.data().fromID,
+              toID: doc.data().toID
+            });
+          }
+        });
+      });
+    },
+    createMessage() {
+
+      if (this.messageText) {
+        fb.collection("messages")
+          .doc(this.getSurgeryID)
+          .collection(this.getSurgeryID)
+          .doc(Date.now().toString())
+          .set({
+            message: this.messageText,
+            name: this.getPatientName,
+            timestamp: Date.now(),
+            fromID: this.fromID,
+            toID: this.toID
+          })
+          .catch((err) => {
+            console.log(err);
+          });
+        this.messageText = null;
+        this.errorText = null;
+      } else {
+        this.errorText = "A message must be entered!";
+      }
+    },
     callSelectPatient() {
       console.log("&&&&&&&&&&&&&&");
       this.patientFirstName = this.patientFirstNameFromMultiple;
-      console.log(this.patientFirstName + "&&&&&&&&&&&&&&"+ this.phoneNumber);
+      console.log(this.patientFirstName + "&&&&&&&&&&&&&&" + this.phoneNumber);
       console.log("&&&&&&&&&&&&&&");
       var request = {
-          params: {
-             firstname: this.patientFirstName,
-             phoneNumber: this.phoneNumber
-          }
-      }
-      axios().get('/user/getPatientWithPhoneAndFirstname', request
-      )
-      .then((response)=> {
-        this.addPatientFromMultipleExtract = true;
-        this.patientLastName = response.data.lastname;
-        this.patientBirthDate = response.data.BirthDate;
-        this.selectedPatientFromMultipleID = response.data._id
-      })
+        params: {
+          firstname: this.patientFirstName,
+          phoneNumber: this.phoneNumber,
+        },
+      };
+      axios()
+        .get("/user/getPatientWithPhoneAndFirstname", request)
+        .then((response) => {
+          this.addPatientFromMultipleExtract = true;
+          this.patientLastName = response.data.lastname;
+          this.patientBirthDate = response.data.BirthDate;
+          this.selectedPatientFromMultipleID = response.data._id;
+        });
     },
     selectPatientFromMultiplePatient() {
       this.patientFirstName = this.patientFirstNameFromMultiple;
@@ -1302,52 +1462,51 @@ export default {
             this.color = "error";
             this.message = "All Fields are required!";
           });
-      } else if(this.addPatientFromMultipleExtract == true) {
+      } else if (this.addPatientFromMultipleExtract == true) {
         this.$store
-              .dispatch("addSurgery", {
-                cordinator: this.doctor,
-                patient: this.selectedPatientFromMultipleID,
-                type: this.type,
-                date: this.surgeryDate,
-                time: this.time,
-                prescription: this.prescription,
-                Instructions: this.Instructions,
-                venue: this.venue,
-                status: this.testStates,
-                statusItem: this.statusItem,
-              })
+          .dispatch("addSurgery", {
+            cordinator: this.doctor,
+            patient: this.selectedPatientFromMultipleID,
+            type: this.type,
+            date: this.surgeryDate,
+            time: this.time,
+            prescription: this.prescription,
+            Instructions: this.Instructions,
+            venue: this.venue,
+            status: this.testStates,
+            statusItem: this.statusItem,
+          })
+          .then((response) => {
+            this.doctor = "";
+            this.patient = "";
+            this.type = "";
+            this.date = "";
+            this.time = "";
+            this.prescription = "";
+            this.Instructions = "";
+            this.venue = "";
+            axios()
+              .get("/user/getAllSurgeries")
               .then((response) => {
-                this.doctor = "";
-                this.patient = "";
-                this.type = "";
-                this.date = "";
-                this.time = "";
-                this.prescription = "";
-                this.Instructions = "";
-                this.venue = "";
-                axios()
-                  .get("/user/getAllSurgeries")
-                  .then((response) => {
-                    this.surgeries = response.data;
-                  })
-                  .catch((err) => {
-                    this.surgeries = err.data;
-                  });
-                this.snackbar = true;
-                this.color = "success";
-                this.message = "Surgery created successfully";
-                this.addPatientFromMultipleExtract = false;
-                this.dialogAddSurgery = false;
-                this.dialogConfirmSurgery = false;
-                this.addThePatient = false;
+                this.surgeries = response.data;
               })
               .catch((err) => {
-                this.snackbar = true;
-                this.color = "error";
-                this.message = "All Fields are required!";
+                this.surgeries = err.data;
               });
-      } 
-      else {
+            this.snackbar = true;
+            this.color = "success";
+            this.message = "Surgery created successfully";
+            this.addPatientFromMultipleExtract = false;
+            this.dialogAddSurgery = false;
+            this.dialogConfirmSurgery = false;
+            this.addThePatient = false;
+          })
+          .catch((err) => {
+            this.snackbar = true;
+            this.color = "error";
+            this.message = "All Fields are required!";
+          });
+      } else {
         axios()
           .get(`/user/getPatient/${this.phoneNumber}`)
           .then((response) => {
@@ -1568,8 +1727,8 @@ export default {
 </script>
 
 <style scoped>
-.v-sheet--offset {
-  top: -24px;
-  position: relative;
+.messages {
+  height: 300px;
+  overflow: auto;
 }
 </style>

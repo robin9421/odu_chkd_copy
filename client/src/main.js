@@ -4,6 +4,9 @@ import router from './router'
 import store from './store'
 import vuetify from './plugins/vuetify';
 import moment from 'moment'
+import VueChatScroll from 'vue-chat-scroll'
+
+Vue.use(VueChatScroll)
 
 Vue.filter('formatDate', function(value) {
     if (value) {
